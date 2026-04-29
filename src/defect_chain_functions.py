@@ -1396,7 +1396,7 @@ def plot_lambda_crit_vs_pairindex(
     return indices, lambdas_crit
 
 
-#zero mode-bulk contribution plots
+#zero mode-bulk contribution plots and concuruence recreation
 
 def diagonal_data_from_hamiltonian(N, beta, lam, periodic=True):
     H = build_ssh_hamiltonian(N, lam, periodic=periodic)
@@ -1569,3 +1569,104 @@ def plot_semi_analytic_concurrence_vs_lambda(
     fig.savefig(savepath, bbox_inches="tight")
     plt.show()
 
+####compare with numerical conucrrence plot????
+
+def plot_numeric_vs_semi_analytic_concurrence_vs_lambda(
+    N=51,
+    beta=30.0,
+    lambda_vals=None,
+    selected_pairs=None,
+    periodic=True,
+    savepath=None
+):
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-0.95, 0.95, 301)
+
+    if selected_pairs is None:
+        selected_pairs = [
+            (0, 1),
+            (N-1, 0),
+            (1, 2),
+            (N-2, N-1),
+            (N//4, N//4 + 1),
+            (N - N//4 - 1, N - N//4),
+        ]
+
+    if savepath is None:
+        savepath = FIG_DIR / f"numeric_vs_semi_analytic_concurrence_N{N}.pdf"
+    else:
+        savepath = Path(savepath).resolve()
+
+    savepath.parent.mkdir(parents=True, exist_ok=True)
+
+    num = len(selected_pairs)
+    ncols = 2
+    nrows = int(np.ceil(num / ncols))
+
+    fig, axs = plt.subplots(
+        nrows, ncols,
+        figsize=(4*ncols, 3.2*nrows),
+        sharex=True,
+        sharey=True
+    )
+    axs = np.array(axs).reshape(-1)
+
+    for ax, pair in zip(axs, selected_pairs):
+        numeric_vals = []
+        semi_vals = []
+
+        for lam in lambda_vals:
+            # full numerical
+            rho_num = compute_rho(
+                beta=beta,
+                lam=lam,
+                pair_idx=pair,
+                N=N,
+                periodic=periodic
+            )
+            numeric_vals.append(concurrence_general(rho_num))
+
+            # semi-analytic reconstruction
+            semi_vals.append(
+                semi_analytic_concurrence_pair(
+                    N=N,
+                    beta=beta,
+                    lam=lam,
+                    pair=pair,
+                    periodic=periodic
+                )
+            )
+
+        ax.plot(lambda_vals, numeric_vals, label="numeric", lw=1.8)
+        ax.plot(lambda_vals, semi_vals, "--", label="semi-analytic", lw=1.6)
+
+        ax.set_title(f"pair {pair}")
+        ax.set_xlabel(r"$\lambda$")
+        ax.set_ylabel("Concurrence")
+        ax.grid(True)
+
+    for ax in axs[num:]:
+        ax.axis("off")
+
+    bc_type = "Periodic" if periodic else "Open"
+    fig.suptitle(
+        rf"Numerical vs semi-analytic concurrence ($N={N}$, $\beta={beta}$, {bc_type})",
+        fontsize=14
+    )
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False
+    )
+
+    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
+    fig.savefig(savepath, bbox_inches="tight")
+    plt.show()
+
+
+
+#####ENTANGLEMENT PHASE DIAGRAM NASIL DEĞİŞİYOR?
