@@ -160,74 +160,6 @@ def concurrence_general(rho):
     lambdas = np.sort(np.real(np.linalg.eigvals(R)))[::-1]
     return max(0, lambdas[0] - lambdas[1] - lambdas[2] - lambdas[3])
 
-def plot_selected_thermal_concurrences_vs_lambda(
-    N=4, 
-    beta_list=None, 
-    lambda_vals=None, 
-    periodic=False, 
-    selected_pairs=None,
-    savepath=None
-):
-    """
-    Thermal concurrence vs λ for selected site pairs (works for even/odd N, OBC/PBC).
-
-    Parameters
-    ----------
-    N : int
-    beta_list : list[float]
-    lambda_vals : array-like
-    periodic : bool
-    selected_pairs : list[tuple[int,int]]  # e.g. [(0,1),(1,2),(N-1,0)]
-    """
-    if savepath is None:
-        savepath = FIG_DIR / f"thermal_concurrence_odd_N{N}.pdf"
-    else:
-        savepath = Path(savepath).resolve()
-
-    savepath.parent.mkdir(parents=True, exist_ok=True)
-    
-    if beta_list is None:
-        beta_list = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-1, 1, 300)
-
-   
-    if selected_pairs is None:
-        if periodic and (N % 2 == 1):           # odd-N PBC
-            selected_pairs = [(0, 1), (1, 2), (N-1, 0)]
-        elif periodic:                           # even-N PBC
-            selected_pairs = [(0, 1), (1, 2)]
-        else:                                    # OBC
-            selected_pairs = [(0, 1), (1, 2), (0, N-1)]
-
-    num = len(selected_pairs)
-    fig, axs = plt.subplots(1, num, figsize=(4*num, 4), sharex=True, sharey=True)
-    if num == 1:
-        axs = [axs]
-
-    for ax, pair in zip(axs, selected_pairs):
-        curves = {}
-        for beta in beta_list:
-            conc_vals = []
-            for lam in lambda_vals:
-                rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
-                conc_vals.append(concurrence_general(rho))
-            ax.plot(lambda_vals, conc_vals, label=f'β={beta}')
-        ax.set_title(f"pair {pair}")
-        ax.set_xlabel(r'$\lambda$')
-        ax.set_ylabel('Concurrence')
-        ax.grid(True)
-
-    handles, labels = axs[0].get_legend_handles_labels()
-    fig.legend(handles, labels, title='β values', loc='center left',
-               bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=9, title_fontsize=10)
-
-    bc_type = "Periodic" if periodic else "Open"
-    plt.suptitle(f'Thermal Concurrence vs λ ({bc_type}, N={N})', fontsize=14)
-    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
-
-    fig.savefig(savepath, bbox_inches="tight")
-    plt.show()
 
 #Print concurrence value at desired lambda 
 
@@ -358,474 +290,9 @@ def plot_energy_vs_lambda_multiN(N_list, lambda_vals=None, periodic=True, savepa
 
     fig.savefig(savepath, bbox_inches="tight")
     plt.show()
+#-----------------------------------------------
 
-####MULTI N with colorful E=0
-
-def plot_energy_vs_lambda_multiN_red(
-    N_list,
-    lambda_vals=None,
-    periodic=True,
-    save_path=None,
-    highlight_zero_mode=True,
-    shade_topological=False,
-    zero_tol=1e-10
-):
-    """
-    Plot SSH single-particle energy spectra for multiple system sizes N
-    in a 2x3 subplot grid.
-
-    Parameters
-    ----------
-    N_list : list
-        List of system sizes, ideally 6 values for a 2x3 grid.
-    lambda_vals : array-like, optional
-        Lambda grid. Default: np.linspace(-1, 1, 201)
-    periodic : bool, optional
-        True  -> PBC
-        False -> OBC
-    save_path : str or Path, optional
-        Output file path.
-    highlight_zero_mode : bool, optional
-        If True, exact zero-energy branch is highlighted when present.
-    shade_topological : bool, optional
-        If True, shades the topological region.
-        IMPORTANT: here we assume the user's convention:
-            topological phase <=> lambda > 0
-    zero_tol : float, optional
-        Numerical tolerance for identifying zero mode.
-    """
-
-    # Default save path
-    if save_path is None:
-        save_path = FIG_DIR / "energy_vs_lambda_multiN.pdf"
-    else:
-        save_path = Path(save_path).resolve()
-
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Default lambda grid
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-1.0, 1.0, 201)
-
-    n_plots = len(N_list)
-    nrows, ncols = 2, 3
-
-    fig, axes = plt.subplots(
-        nrows, ncols,
-        figsize=(14, 8),
-        sharex=True,
-        sharey=True
-    )
-    axes = axes.flatten()
-
-    for idx, N in enumerate(N_list):
-        ax = axes[idx]
-
-        E_vals = []
-
-        for lam in lambda_vals:
-            H = build_ssh_hamiltonian(N, lam, periodic)
-            E, _ = eigh(H)
-            E_vals.append(E)
-
-        E_vals = np.array(E_vals)   # shape = (len(lambda_vals), N)
-
-        # Optional: shade topological region
-        # User convention: topological for lambda > 0
-        if shade_topological:
-            ax.axvspan(0.0, lambda_vals.max(), alpha=0.08, color='orange', zorder=0)
-
-        # Plot each eigenvalue branch
-        for i in range(E_vals.shape[1]):
-            branch = E_vals[:, i]
-
-            is_exact_zero_branch = np.all(np.abs(branch) < zero_tol)
-
-            # Highlight only if requested, and especially relevant for odd-N OBC
-            if (
-                highlight_zero_mode
-                and (not periodic)
-                and (N % 2 == 1)
-                and is_exact_zero_branch
-            ):
-                ax.plot(
-                    lambda_vals, branch,
-                    lw=2.2,
-                    color='crimson',
-                    zorder=5,
-                    label='zero mode' if idx == 0 else None
-                )
-            else:
-                ax.plot(
-                    lambda_vals, branch,
-                    lw=0.6,
-                    color='black',
-                    alpha=0.95,
-                    zorder=2
-                )
-
-        # E=0 reference line
-        ax.axhline(0.0, color='gray', ls='--', lw=0.7, alpha=0.5, zorder=1)
-
-        bc = "PBC" if periodic else "OBC"
-        ax.set_title(fr"$N={N}$ ({bc})", fontsize=12)
-        ax.set_ylabel(r"$E$")
-
-    # Turn off unused panels
-    for j in range(n_plots, nrows * ncols):
-        axes[j].axis("off")
-
-    # x-label only on bottom row
-    for ax in axes[-ncols:]:
-        ax.set_xlabel(r"$\lambda$")
-
-    # Legend only if zero mode was labeled
-    handles, labels = axes[0].get_legend_handles_labels()
-    if handles:
-        fig.legend(handles, labels, loc="upper right", frameon=False)
-
-    fig.suptitle(r"SSH Energy Spectrum vs $\lambda$", fontsize=16)
-    plt.tight_layout()
-
-    fig.savefig(save_path, bbox_inches="tight", dpi=300)
-    plt.show()
-
-def plot_energy_vs_lambda_multiN_blue(
-    N_list,
-    lambda_vals=None,
-    periodic=True,
-    save_path=None,
-    highlight_near_zero=True,
-    near_zero_tol=0.08,
-    shade_topological=False
-):
-    """
-    SSH energy spectrum vs lambda for multiple N.
-
-    Highlights near-zero edge modes (in topological region λ > 0) in BLUE.
-
-    Convention:
-        topological phase <=> lambda > 0
-    """
-
-    # Save path
-    if save_path is None:
-        save_path = FIG_DIR / "energy_vs_lambda_multiN_blue.pdf"
-    else:
-        save_path = Path(save_path).resolve()
-
-    save_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Lambda grid
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-1.0, 1.0, 201)
-
-    topo_mask = lambda_vals > 0
-
-    nrows, ncols = 2, 3
-    fig, axes = plt.subplots(
-        nrows, ncols,
-        figsize=(14, 8),
-        sharex=True,
-        sharey=True
-    )
-    axes = axes.flatten()
-
-    legend_added = False
-
-    for idx, N in enumerate(N_list):
-        ax = axes[idx]
-
-        E_vals = []
-
-        for lam in lambda_vals:
-            H = build_ssh_hamiltonian(N, lam, periodic)
-            E, _ = eigh(H)
-            E_vals.append(E)
-
-        E_vals = np.array(E_vals)
-
-        # Optional: shade topological region
-        if shade_topological:
-            ax.axvspan(0.0, lambda_vals.max(), alpha=0.08, color='orange', zorder=0)
-
-        # Plot branches
-        for i in range(E_vals.shape[1]):
-            branch = E_vals[:, i]
-
-            # minimum |E| in topological region
-            if np.any(topo_mask):
-                min_abs_topo = np.min(np.abs(branch[topo_mask]))
-            else:
-                min_abs_topo = np.inf
-
-            is_near_zero = (
-                highlight_near_zero
-                and (not periodic)   # only meaningful for OBC
-                and (min_abs_topo < near_zero_tol)
-            )
-
-            if is_near_zero:
-                ax.plot(
-                    lambda_vals, branch,
-                    lw=1.8,
-                    color='royalblue',
-                    zorder=4,
-                    label='edge mode' if not legend_added else None
-                )
-                legend_added = True
-            else:
-                ax.plot(
-                    lambda_vals, branch,
-                    lw=0.6,
-                    color='black',
-                    alpha=0.95,
-                    zorder=2
-                )
-
-        # E=0 reference
-        ax.axhline(0, color='gray', ls='--', lw=0.7, alpha=0.5)
-
-        bc = "PBC" if periodic else "OBC"
-        ax.set_title(fr"$N={N}$ ({bc})", fontsize=12)
-        ax.set_ylabel(r"$E$")
-
-    # turn off unused axes
-    for j in range(len(N_list), nrows * ncols):
-        axes[j].axis("off")
-
-    # x labels
-    for ax in axes[-ncols:]:
-        ax.set_xlabel(r"$\lambda$")
-
-    # legend
-    handles, labels = axes[0].get_legend_handles_labels()
-    if handles:
-        fig.legend(handles, labels, loc="upper right", frameon=False)
-
-    fig.suptitle(r"SSH Energy Spectrum vs $\lambda$", fontsize=16)
-    plt.tight_layout()
-
-    fig.savefig(save_path, bbox_inches="tight", dpi=300)
-    plt.show()
-
-## min energy
-def plot_min_abs_energy_vs_lambda(
-    N=51,
-    lambda_vals=None,
-    periodic=True,
-    plot_abs=True,
-    log10y=False,
-    eps_floor=1e-16,
-    zero_tol=1e-12,
-    show_zero_tol=True,
-    return_data=True
-):
-    """
-    For each lambda, diagonalize the SSH Hamiltonian and select the eigenvalue
-    closest to zero.
-
-    Parameters
-    ----------
-    plot_abs : bool
-        True  -> plot |E|min(lambda)
-        False -> plot signed E*(lambda), where E* is the eigenvalue with minimal |E|.
-    log10y : bool
-        If True, plot log10(|E|min).
-    eps_floor : float
-        Floor used when taking log10.
-    zero_tol : float
-        Numerical threshold below which the mode is treated as "exact zero".
-    show_zero_tol : bool
-        If True, draw a horizontal guide for zero_tol on the plot.
-    """
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from scipy.linalg import eigh
-
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-1.0, 1.0, 401)
-
-    Emin = np.zeros(len(lambda_vals), dtype=float)
-    E_signed = np.zeros(len(lambda_vals), dtype=float)
-    idx_min = np.zeros(len(lambda_vals), dtype=int)
-
-    for m, lam in enumerate(lambda_vals):
-        H = build_ssh_hamiltonian(N, lam, periodic)
-        E, _ = eigh(H)   # sorted ascending
-        k = int(np.argmin(np.abs(E)))
-        idx_min[m] = k
-        E_signed[m] = float(E[k])
-        Emin[m] = float(np.abs(E[k]))
-
-    is_exact_zero = Emin < zero_tol
-
-    if log10y:
-        y_plot = np.log10(np.maximum(Emin, eps_floor))
-        y_label = r'$\log_{10}(|E|_{\min})$'
-    else:
-        y_plot = Emin if plot_abs else E_signed
-        y_label = r'$|E|_{\min}$' if plot_abs else r'$E^*(\lambda)$'
-
-    plt.figure(figsize=(7, 4))
-    plt.plot(lambda_vals, y_plot, linestyle='-', lw=1.5)
-
-    if not log10y:
-        plt.axhline(0, color='gray', ls='--', lw=0.8)
-
-    if show_zero_tol and plot_abs:
-        if log10y:
-            plt.axhline(np.log10(zero_tol), color='red', ls=':', lw=1.0,
-                        label=fr'zero tol = {zero_tol:.0e}')
-        else:
-            plt.axhline(zero_tol, color='red', ls=':', lw=1.0,
-                        label=fr'zero tol = {zero_tol:.0e}')
-
-    # exact-zero points
-    if np.any(is_exact_zero):
-        if log10y:
-            plt.scatter(
-                lambda_vals[is_exact_zero],
-                np.log10(np.maximum(Emin[is_exact_zero], eps_floor)),
-                s=12, zorder=3, label='exact-zero region'
-            )
-        elif plot_abs:
-            plt.scatter(
-                lambda_vals[is_exact_zero],
-                Emin[is_exact_zero],
-                s=12, zorder=3, label='exact-zero region'
-            )
-        else:
-            plt.scatter(
-                lambda_vals[is_exact_zero],
-                E_signed[is_exact_zero],
-                s=12, zorder=3, label='exact-zero region'
-            )
-
-    plt.xlabel(r'$\lambda$')
-    plt.ylabel(y_label)
-    bc = "PBC" if periodic else "OBC"
-    plt.title(fr'Closest-to-zero energy vs $\lambda$ (N={N}, {bc})')
-    plt.grid(True, ls='--', alpha=0.4)
-
-    handles, labels = plt.gca().get_legend_handles_labels()
-    if handles:
-        plt.legend(frameon=False)
-
-    plt.tight_layout()
-    plt.show()
-
-    if return_data:
-        return lambda_vals, Emin, E_signed, idx_min, is_exact_zero
-        
-#subplot min abs energy for multiple N values
-def plot_min_abs_energy_multiN(
-    N_list,
-    lambda_vals=None,
-    periodic=True,
-    log10y=False,
-    zero_tol=1e-12,
-    eps_floor=1e-16,
-    ncols=None,
-    figsize_per_plot=(5, 3.5),
-    sharey=True,
-    savepath=None
-):
-    """
-    Plot |E|min(λ) for multiple system sizes N in a grid of subplots.
-
-    Parameters
-    ----------
-    N_list : list
-        List of system sizes
-    lambda_vals : array-like
-        Lambda grid
-    periodic : bool
-        PBC or OBC
-    log10y : bool
-        Use log10 scale
-    zero_tol : float
-        Threshold for "exact zero"
-    ncols : int or None
-        Number of columns (default: all in one row)
-    figsize_per_plot : tuple
-        Size per subplot
-    sharey : bool
-        Share y-axis across plots
-    """
-
-    if savepath is None:
-        savepath = FIG_DIR / f"zero_energy_vs_lambda_multiN.pdf"
-    else:
-        savepath = Path(savepath).resolve()
-
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-1.0, 1.0, 401)
-
-    n_plots = len(N_list)
-
-    # layout ayarı
-    if ncols is None:
-        ncols = n_plots
-    nrows = int(np.ceil(n_plots / ncols))
-
-    fig, axes = plt.subplots(
-        nrows, ncols,
-        figsize=(figsize_per_plot[0]*ncols, figsize_per_plot[1]*nrows),
-        sharey=sharey
-    )
-
-    # axes flatten (tek subplot olsa bile)
-    axes = np.atleast_1d(axes).flatten()
-
-    for ax, N in zip(axes, N_list):
-
-        Emin = []
-
-        for lam in lambda_vals:
-            H = build_ssh_hamiltonian(N, lam, periodic)
-            E, _ = eigh(H)
-            Emin.append(np.min(np.abs(E)))
-
-        Emin = np.array(Emin)
-
-        if log10y:
-            y = np.log10(np.maximum(Emin, eps_floor))
-            ylabel = r'$\log_{10}(|E|_{\min})$'
-        else:
-            y = Emin
-            ylabel = r'$|E|_{\min}$'
-
-        ax.plot(lambda_vals, y, lw=1.5)
-
-        # zero tolerance çizgisi
-        if log10y:
-            ax.axhline(np.log10(zero_tol), color='red', ls=':', lw=1)
-        else:
-            ax.axhline(zero_tol, color='red', ls=':', lw=1)
-
-        # kritik nokta
-        ax.axvline(0, color='gray', ls='--', alpha=0.5)
-
-        bc = "PBC" if periodic else "OBC"
-        ax.set_title(fr"$N={N}$ ({bc})")
-        ax.set_xlabel(r'$\lambda$')
-        ax.grid(True, ls='--', alpha=0.4)
-
-    # boş subplotları kapat
-    for j in range(len(N_list), len(axes)):
-        axes[j].axis("off")
-
-    # sadece sol altta ylabel
-    axes[0].set_ylabel(ylabel)
-
-    plt.suptitle(r'Closest-to-zero energy vs $\lambda$ (finite-size scaling)', fontsize=14)
-    plt.tight_layout()
-    fig.savefig(savepath, bbox_inches="tight")
-    plt.show()
-
-
-### Energy versus lambda distribution plots in terms of mode index (sorted by energy) rather than lambda.
+#Energy in terms of MODE INDEX (sorted by energy) rather than lambda.
 
 def plot_spectrum(
     N=51,
@@ -965,6 +432,968 @@ def plot_spectrum_multiN_vertical(
     plt.tight_layout()
     fig.savefig(save_path, bbox_inches="tight", dpi=300)
     plt.show()
+#-----------------------------------------------
 
-### Zero mode distribution
+#Analyzing Exact zero energy whether exists or not, NUMERİCAL ZERO OR ANALYTICAL ZERO
 
+def analyze_zero_mode_vs_lambda(
+    N=51,
+    lambda_vals=None,
+    periodic=True,
+    tol_eig=1e-14,
+    tol_res=1e-12,
+    plot=True,
+    log10y=False,
+    eps_floor=1e-16
+):
+    """
+    Analyze closest-to-zero eigenvalue and check whether it is an exact zero mode.
+
+    Criteria:
+        - |E| < tol_eig AND residual < tol_res  -> numerical exact zero
+        - otherwise -> near-zero mode
+    """
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import eigh
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1.0, 1.0, 401)
+
+    Emin = []
+    residuals = []
+    is_numerical_zero = []
+
+    for lam in lambda_vals:
+        H = build_ssh_hamiltonian(N, lam, periodic)
+        E, V = eigh(H)
+
+        k = int(np.argmin(np.abs(E)))
+        e_min = E[k]
+        phi = V[:, k]
+
+        res = np.linalg.norm(H @ phi)
+
+        Emin.append(abs(e_min))
+        residuals.append(res)
+
+        is_numerical_zero.append(
+            (abs(e_min) < tol_eig) and (res < tol_res)
+        )
+
+    Emin = np.array(Emin)
+    residuals = np.array(residuals)
+    is_numerical_zero = np.array(is_numerical_zero)
+
+    # ---------------- PLOT ----------------
+    if plot:
+        plt.figure(figsize=(7, 4))
+
+        if log10y:
+            y_plot = np.log10(np.maximum(Emin, eps_floor))
+            plt.ylabel(r'$\log_{10}(|E|_{\min})$')
+        else:
+            y_plot = Emin
+            plt.ylabel(r'$|E|_{\min}$')
+
+        plt.plot(lambda_vals, y_plot, lw=1.5, label='closest-to-zero mode')
+
+        # tolerance lines
+        if log10y:
+            plt.axhline(np.log10(tol_eig), color='red', ls=':', label='eig tol')
+        else:
+            plt.axhline(tol_eig, color='red', ls=':', label='eig tol')
+
+        # numerical zero points
+        if np.any(is_numerical_zero):
+            if log10y:
+                plt.scatter(
+                    lambda_vals[is_numerical_zero],
+                    np.log10(np.maximum(Emin[is_numerical_zero], eps_floor)),
+                    s=15,
+                    label='numerical zero'
+                )
+            else:
+                plt.scatter(
+                    lambda_vals[is_numerical_zero],
+                    Emin[is_numerical_zero],
+                    s=15,
+                    label='numerical zero'
+                )
+
+        plt.xlabel(r'$\lambda$')
+        bc = "PBC" if periodic else "OBC"
+        plt.title(f'Near-zero vs numerical-zero modes (N={N}, {bc})')
+
+        plt.grid(True, ls='--', alpha=0.4)
+        plt.legend(frameon=False)
+        plt.tight_layout()
+        plt.show()
+
+    return lambda_vals, Emin, residuals, is_numerical_zero
+###########################################################################
+## min energy AMA BU FONKSİYONLARDA HATA VAR BENCE
+def plot_min_abs_energy_vs_lambda(
+    N=51,
+    lambda_vals=None,
+    periodic=True,
+    plot_abs=True,
+    log10y=False,
+    eps_floor=1e-16,
+    zero_tol=1e-12,
+    show_zero_tol=True,
+    return_data=True
+):
+    """
+    For each lambda, diagonalize the SSH Hamiltonian and select the eigenvalue
+    closest to zero.
+
+    Parameters
+    ----------
+    plot_abs : bool
+        True  -> plot |E|min(lambda)
+        False -> plot signed E*(lambda), where E* is the eigenvalue with minimal |E|.
+    log10y : bool
+        If True, plot log10(|E|min).
+    eps_floor : float
+        Floor used when taking log10.
+    zero_tol : float
+        Numerical threshold below which the mode is treated as "exact zero".
+    show_zero_tol : bool
+        If True, draw a horizontal guide for zero_tol on the plot.
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import eigh
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1.0, 1.0, 401)
+
+    Emin = np.zeros(len(lambda_vals), dtype=float)
+    E_signed = np.zeros(len(lambda_vals), dtype=float)
+    idx_min = np.zeros(len(lambda_vals), dtype=int)
+
+    for m, lam in enumerate(lambda_vals):
+        H = build_ssh_hamiltonian(N, lam, periodic)
+        E, _ = eigh(H)   # sorted ascending
+        k = int(np.argmin(np.abs(E)))
+        idx_min[m] = k
+        E_signed[m] = float(E[k])
+        Emin[m] = float(np.abs(E[k]))
+
+    is_exact_zero = Emin < zero_tol
+
+    if log10y:
+        y_plot = np.log10(np.maximum(Emin, eps_floor))
+        y_label = r'$\log_{10}(|E|_{\min})$'
+    else:
+        y_plot = Emin if plot_abs else E_signed
+        y_label = r'$|E|_{\min}$' if plot_abs else r'$E^*(\lambda)$'
+
+    plt.figure(figsize=(7, 4))
+    plt.plot(lambda_vals, y_plot, linestyle='-', lw=1.5)
+
+    if not log10y:
+        plt.axhline(0, color='gray', ls='--', lw=0.8)
+
+    if show_zero_tol and plot_abs:
+        if log10y:
+            plt.axhline(np.log10(zero_tol), color='red', ls=':', lw=1.0,
+                        label=fr'zero tol = {zero_tol:.0e}')
+        else:
+            plt.axhline(zero_tol, color='red', ls=':', lw=1.0,
+                        label=fr'zero tol = {zero_tol:.0e}')
+
+    # exact-zero points
+    if np.any(is_exact_zero):
+        if log10y:
+            plt.scatter(
+                lambda_vals[is_exact_zero],
+                np.log10(np.maximum(Emin[is_exact_zero], eps_floor)),
+                s=12, zorder=3, label='exact-zero region'
+            )
+        elif plot_abs:
+            plt.scatter(
+                lambda_vals[is_exact_zero],
+                Emin[is_exact_zero],
+                s=12, zorder=3, label='exact-zero region'
+            )
+        else:
+            plt.scatter(
+                lambda_vals[is_exact_zero],
+                E_signed[is_exact_zero],
+                s=12, zorder=3, label='exact-zero region'
+            )
+
+    plt.xlabel(r'$\lambda$')
+    plt.ylabel(y_label)
+    bc = "PBC" if periodic else "OBC"
+    plt.title(fr'Closest-to-zero energy vs $\lambda$ (N={N}, {bc})')
+    plt.grid(True, ls='--', alpha=0.4)
+
+    handles, labels = plt.gca().get_legend_handles_labels()
+    if handles:
+        plt.legend(frameon=False)
+
+    plt.tight_layout()
+    plt.show()
+
+    if return_data:
+        return lambda_vals, Emin, E_signed, idx_min, is_exact_zero
+        
+def plot_min_abs_energy_multiN(
+    N_list,
+    lambda_vals=None,
+    periodic=True,
+    log10y=False,
+    zero_tol=1e-12,
+    eps_floor=1e-16,
+    ncols=None,
+    figsize_per_plot=(5, 3.5),
+    sharey=True,
+    savepath=None
+):
+    """
+    Plot |E|min(λ) for multiple system sizes N in a grid of subplots.
+
+    Parameters
+    ----------
+    N_list : list
+        List of system sizes
+    lambda_vals : array-like
+        Lambda grid
+    periodic : bool
+        PBC or OBC
+    log10y : bool
+        Use log10 scale
+    zero_tol : float
+        Threshold for "exact zero"
+    ncols : int or None
+        Number of columns (default: all in one row)
+    figsize_per_plot : tuple
+        Size per subplot
+    sharey : bool
+        Share y-axis across plots
+    """
+
+    if savepath is None:
+        savepath = FIG_DIR / f"zero_energy_vs_lambda_multiN.pdf"
+    else:
+        savepath = Path(savepath).resolve()
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1.0, 1.0, 401)
+
+    n_plots = len(N_list)
+
+    # layout ayarı
+    if ncols is None:
+        ncols = n_plots
+    nrows = int(np.ceil(n_plots / ncols))
+
+    fig, axes = plt.subplots(
+        nrows, ncols,
+        figsize=(figsize_per_plot[0]*ncols, figsize_per_plot[1]*nrows),
+        sharey=sharey
+    )
+
+    # axes flatten (tek subplot olsa bile)
+    axes = np.atleast_1d(axes).flatten()
+
+    for ax, N in zip(axes, N_list):
+
+        Emin = []
+
+        for lam in lambda_vals:
+            H = build_ssh_hamiltonian(N, lam, periodic)
+            E, _ = eigh(H)
+            Emin.append(np.min(np.abs(E)))
+
+        Emin = np.array(Emin)
+
+        if log10y:
+            y = np.log10(np.maximum(Emin, eps_floor))
+            ylabel = r'$\log_{10}(|E|_{\min})$'
+        else:
+            y = Emin
+            ylabel = r'$|E|_{\min}$'
+
+        ax.plot(lambda_vals, y, lw=1.5)
+
+        # zero tolerance çizgisi
+        if log10y:
+            ax.axhline(np.log10(zero_tol), color='red', ls=':', lw=1)
+        else:
+            ax.axhline(zero_tol, color='red', ls=':', lw=1)
+
+        # kritik nokta
+        ax.axvline(0, color='gray', ls='--', alpha=0.5)
+
+        bc = "PBC" if periodic else "OBC"
+        ax.set_title(fr"$N={N}$ ({bc})")
+        ax.set_xlabel(r'$\lambda$')
+        ax.grid(True, ls='--', alpha=0.4)
+
+    # boş subplotları kapat
+    for j in range(len(N_list), len(axes)):
+        axes[j].axis("off")
+
+    # sadece sol altta ylabel
+    axes[0].set_ylabel(ylabel)
+
+    plt.suptitle(r'Closest-to-zero energy vs $\lambda$ (finite-size scaling)', fontsize=14)
+    plt.tight_layout()
+    fig.savefig(savepath, bbox_inches="tight")
+    plt.show()
+###########################################################################
+#-----------------------------------------------
+
+def plot_wavefunction_profile(N=51, lam=0.6, periodic=True, mode_index='auto'):
+    """
+    Seçilen modun uzaysal profilini çizer: |ψ(i)|^2.
+    mode_index='auto' → |E| en küçük mod.
+    """
+    H = build_ssh_hamiltonian(N, lam, periodic)
+    E, U = eigh(H)
+    if mode_index == 'auto':
+        mode_index = int(np.argmin(np.abs(E)))
+    psi = U[:, mode_index]
+    prof = np.abs(psi)**2
+    sites = np.arange(N)
+
+    plt.figure(figsize=(7,3.5))
+    plt.bar(sites, prof, width=0.8, alpha=0.9)
+    plt.xlabel("Site index i")
+    plt.ylabel(r"$|\psi(i)|^2$")
+    bc = "PBC" if periodic else "OBC"
+    plt.title(f"Mode {mode_index}, E ≈ {E[mode_index]:.2e}  (N={N}, λ={lam}, {bc})")
+    plt.grid(axis='y', ls='--', alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+    return mode_index, E[mode_index], prof
+
+def trial_near_zero_profile_old(N=51, lam=0.6, normalize=True):
+    """
+    Odd-N PBC SSH chain için approximate near-zero defect-mode profile.
+
+    Uses:
+        r = t1/t2 = (1-lambda)/(1+lambda)
+        phi_{2n}   = (-r)^n
+        phi_{2n+1} = (-1)^{n+1} r^{M-n}
+
+    valid mainly for odd N and |r| < 1.
+    """
+    import numpy as np
+
+    if N % 2 == 0:
+        raise ValueError("This trial profile is intended for odd N.")
+
+    M = (N - 1) // 2
+    t1 = 1 - lam
+    t2 = 1 + lam
+    r = t1 / t2
+
+    phi = np.zeros(N, dtype=float)
+
+    # even sites: j = 2n, n = 0,...,M
+    for n in range(M + 1):
+        phi[2*n] = (-r)**n
+
+    # odd sites: j = 2n+1, n = 0,...,M-1
+    for n in range(M):
+        phi[2*n + 1] = ((-1)**(n + 1)) * (r**(M - n))
+
+    if normalize:
+        phi = phi / np.linalg.norm(phi)
+
+    return phi
+
+def trial_near_zero_profile(N=51, lam=0.6, normalize=True):
+    """
+    Odd-N PBC SSH chain için piecewise approximate near-zero defect-mode profile.
+
+    For lambda > 0:
+        r = t1/t2
+        phi_{2n}   = (-r)^n
+        phi_{2n+1} = (-1)^{n+1} r^{M-n}
+
+    For lambda < 0:
+        s = t2/t1 = 1/r
+        phi_{2n}   = (-1)^n s^{M-n}
+        phi_{2n+1} = (-1)^{n+1} s^n
+
+    Valid mainly for odd N away from lambda = 0.
+    """
+    import numpy as np
+
+    if N % 2 == 0:
+        raise ValueError("This trial profile is intended for odd N.")
+
+    M = (N - 1) // 2
+    t1 = 1 - lam
+    t2 = 1 + lam
+
+    phi = np.zeros(N, dtype=float)
+
+    if lam > 0:
+        r = t1 / t2
+
+        for n in range(M + 1):
+            phi[2*n] = (-r)**n
+
+        for n in range(M):
+            phi[2*n + 1] = (-1)**(n + 1) * r**(M - n)
+
+    elif lam < 0:
+        s = t2 / t1
+
+        for n in range(M + 1):
+            phi[2*n] = (-1)**n * s**(M - n)
+
+        for n in range(M):
+            phi[2*n + 1] = (-1)**(n + 1) * s**n
+
+    else:
+        # lambda = 0: localized ansatz is not meaningful
+        phi[:] = 1.0
+
+    if normalize:
+        norm = np.linalg.norm(phi)
+        if norm > 0:
+            phi = phi / norm
+
+    return phi
+
+
+def compare_numeric_and_trial_profile(N=51, lam=0.6, periodic=True, mode_index="auto"):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import eigh
+
+    H = build_ssh_hamiltonian(N, lam, periodic)
+    E, U = eigh(H)
+
+    if mode_index == "auto":
+        mode_index = int(np.argmin(np.abs(E)))
+
+    psi_num = U[:, mode_index]
+    psi_trial = trial_near_zero_profile(N=N, lam=lam, normalize=True)
+
+    # Eigenvectors have arbitrary overall sign, so align signs
+    if np.dot(psi_num, psi_trial) < 0:
+        psi_trial = -psi_trial
+
+    overlap = abs(np.dot(psi_num, psi_trial))**2
+
+    sites = np.arange(N)
+
+    plt.figure(figsize=(7, 3.5))
+    plt.bar(sites - 0.18, np.abs(psi_num)**2, width=0.35, label="numeric")
+    plt.bar(sites + 0.18, np.abs(psi_trial)**2, width=0.35, alpha=0.7, label="trial")
+
+    plt.xlabel("Site index i")
+    plt.ylabel(r"$|\psi(i)|^2$")
+    plt.title(
+        fr"N={N}, $\lambda$={lam}, E={E[mode_index]:.2e}, overlap={overlap:.4f}"
+    )
+    plt.grid(axis="y", ls="--", alpha=0.5)
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.show()
+
+    return mode_index, E[mode_index], overlap, psi_num, psi_trial
+
+
+##--------------------------------------------
+
+
+def plot_numeric_wavefunction_profile(
+    N=51,
+    lam=0.6,
+    periodic=True,
+    mode_index="auto",
+    centered=True,
+    center_site=0,
+    savepath=None,
+    return_data=True
+):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import eigh
+    from pathlib import Path
+
+    H = build_ssh_hamiltonian(N, lam, periodic=periodic)
+    E, U = eigh(H)
+
+    if mode_index == "auto":
+        mode_index = int(np.argmin(np.abs(E)))
+
+    psi = U[:, mode_index]
+    psi = psi / np.linalg.norm(psi)
+
+    prof = np.abs(psi)**2
+
+    if centered:
+        # Put center_site at the middle of the plot
+        shift = N // 2 - center_site
+        prof_plot = np.roll(prof, shift)
+
+        x = np.arange(N) - N // 2
+        xlabel = "Distance from defect"
+        title_extra = "centered"
+    else:
+        prof_plot = prof
+        x = np.arange(N)
+        xlabel = "Site index $i$"
+        title_extra = "site basis"
+
+    plt.figure(figsize=(7, 3.5))
+    plt.bar(x, prof_plot, width=0.8, alpha=0.9)
+
+    plt.xlabel(xlabel)
+    plt.ylabel(r"$|\psi_i|^2$")
+
+    bc = "PBC" if periodic else "OBC"
+    plt.title(
+        fr"Mode {mode_index}, $E={E[mode_index]:.2e}$ "
+        fr"$(N={N}, \lambda={lam}, {bc}, {title_extra})$"
+    )
+
+    plt.grid(axis="y", ls="--", alpha=0.5)
+    plt.tight_layout()
+
+    if savepath is not None:
+        savepath = Path(savepath)
+        savepath.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(savepath, bbox_inches="tight")
+
+    plt.show()
+
+    if return_data:
+        return {
+            "mode_index": mode_index,
+            "energy": E[mode_index],
+            "psi": psi,
+            "profile": prof,
+            "x_plot": x,
+            "profile_plot": prof_plot,
+            "eigenvalues": E
+        }
+
+def plot_centered_profiles_multi_lambda(
+    N=51,
+    lambda_list=(0.1, 0.3, 0.5, 0.8),
+    periodic=True,
+    center_site=0,
+    savepath=None
+):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import eigh
+    from pathlib import Path
+    import math
+
+    n_plots = len(lambda_list)
+
+    # 🔥 grid boyutu otomatik
+    ncols = int(np.ceil(np.sqrt(n_plots)))
+    nrows = int(np.ceil(n_plots / ncols))
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), sharex=True, sharey=True)
+    axs = np.array(axs).ravel()
+
+    for i, lam in enumerate(lambda_list):
+        ax = axs[i]
+
+        H = build_ssh_hamiltonian(N, lam, periodic=periodic)
+        E, U = eigh(H)
+
+        mode_index = int(np.argmin(np.abs(E)))
+        psi = U[:, mode_index]
+        psi = psi / np.linalg.norm(psi)
+        prof = np.abs(psi)**2
+
+        shift = N // 2 - center_site
+        prof_shifted = np.roll(prof, shift)
+        x = np.arange(N) - N // 2
+
+        ax.bar(x, prof_shifted, width=0.8, alpha=0.9)
+        ax.set_title(fr"$\lambda={lam}$, $E={E[mode_index]:.2e}$", fontsize=10)
+        ax.grid(axis="y", ls="--", alpha=0.4)
+
+    # 🔥 fazla subplotları kapat
+    for j in range(n_plots, len(axs)):
+        axs[j].axis("off")
+
+    # eksen label
+    for ax in axs[:n_plots]:
+        ax.set_xlabel("Distance from defect")
+        ax.set_ylabel(r"$|\psi_i|^2$")
+
+    fig.suptitle(fr"Near-zero mode profiles ($N={N}$, PBC, centered)", y=1.02)
+    plt.tight_layout()
+
+    if savepath is not None:
+        savepath = Path(savepath)
+        savepath.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(savepath, bbox_inches="tight", dpi=300)
+
+    plt.show()
+
+def compare_numeric_and_trial_multi_lambda(
+    N=51,
+    lambda_list=(0.25, 0.5, 0.75, 1.0),
+    periodic=True,
+    centered=True,
+    center_site=0,
+    savepath=None
+):
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.linalg import eigh
+    from pathlib import Path
+
+    n_plots = len(lambda_list)
+    ncols = int(np.ceil(np.sqrt(n_plots)))
+    nrows = int(np.ceil(n_plots / ncols))
+
+    fig, axs = plt.subplots(
+        nrows, ncols,
+        figsize=(4.2*ncols, 3.2*nrows),
+        sharex=True,
+        sharey=True
+    )
+    axs = np.array(axs).ravel()
+
+    results = []
+
+    for i, lam in enumerate(lambda_list):
+        ax = axs[i]
+
+        H = build_ssh_hamiltonian(N, lam, periodic=periodic)
+        E, U = eigh(H)
+
+        mode_index = int(np.argmin(np.abs(E)))
+        psi_num = U[:, mode_index]
+        psi_num = psi_num / np.linalg.norm(psi_num)
+
+        psi_trial = trial_near_zero_profile(
+            N=N,
+            lam=lam,
+            normalize=True
+        )
+
+        # align global sign
+        if np.dot(psi_num, psi_trial) < 0:
+            psi_trial = -psi_trial
+
+        wave_overlap = abs(np.dot(psi_num, psi_trial))**2
+
+        prof_num = np.abs(psi_num)**2
+        prof_trial = np.abs(psi_trial)**2
+
+        # probability-profile overlap, insensitive to signs
+        prob_overlap = (np.sum(np.sqrt(prof_num * prof_trial)))**2
+
+        if centered:
+            shift = N // 2 - center_site
+            x = np.arange(N) - N // 2
+            prof_num_plot = np.roll(prof_num, shift)
+            prof_trial_plot = np.roll(prof_trial, shift)
+            xlabel = "Distance from defect"
+        else:
+            x = np.arange(N)
+            prof_num_plot = prof_num
+            prof_trial_plot = prof_trial
+            xlabel = "Site index $i$"
+
+        ax.bar(
+            x,
+            prof_num_plot,
+            width=0.8,
+            alpha=0.45,
+            label="numeric"
+        )
+
+        ax.plot(
+            x,
+            prof_trial_plot,
+            marker="o",
+            markersize=2.5,
+            lw=1.2,
+            label="trial"
+        )
+
+        ax.set_title(
+            fr"$\lambda={lam}$, $E={E[mode_index]:.1e}$, "
+            fr"$P={prob_overlap:.3f}$",
+            fontsize=10
+        )
+
+        ax.grid(axis="y", ls="--", alpha=0.35)
+
+        results.append({
+            "lambda": lam,
+            "mode_index": mode_index,
+            "energy": E[mode_index],
+            "wave_overlap": wave_overlap,
+            "probability_overlap": prob_overlap
+        })
+
+    for j in range(n_plots, len(axs)):
+        axs[j].axis("off")
+
+    for ax in axs[:n_plots]:
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(r"$|\psi_i|^2$")
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, frameon=False, loc="upper right")
+
+    fig.suptitle(
+        fr"Numerical vs trial near-zero profiles ($N={N}$, PBC, centered)",
+        y=1.02
+    )
+
+    plt.tight_layout()
+
+    if savepath is not None:
+        savepath = Path(savepath)
+        savepath.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(savepath, bbox_inches="tight", dpi=300)
+
+    plt.show()
+
+    return results
+
+##--------------------------------------------
+
+##CONCURRENCE
+
+def plot_selected_thermal_concurrences_vs_lambda(
+    N=4, 
+    beta_list=None, 
+    lambda_vals=None, 
+    periodic=False, 
+    selected_pairs=None,
+    savepath=None
+):
+    """
+    Thermal concurrence vs λ for selected site pairs (works for even/odd N, OBC/PBC).
+
+    Parameters
+    ----------
+    N : int
+    beta_list : list[float]
+    lambda_vals : array-like
+    periodic : bool
+    selected_pairs : list[tuple[int,int]]  # e.g. [(0,1),(1,2),(N-1,0)]
+    """
+    if savepath is None:
+        savepath = FIG_DIR / f"thermal_concurrence_odd_N{N}.pdf"
+    else:
+        savepath = Path(savepath).resolve()
+
+    savepath.parent.mkdir(parents=True, exist_ok=True)
+    
+    if beta_list is None:
+        beta_list = [0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1, 1, 300)
+
+   
+    if selected_pairs is None:
+        if periodic and (N % 2 == 1):           # odd-N PBC
+            selected_pairs = [(0, 1), (1, 2), (N-1, 0)]
+        elif periodic:                           # even-N PBC
+            selected_pairs = [(0, 1), (1, 2)]
+        else:                                    # OBC
+            selected_pairs = [(0, 1), (1, 2), (0, N-1)]
+
+    num = len(selected_pairs)
+
+    ncols = 2
+    nrows = int(np.ceil(num / ncols))
+
+    fig, axs = plt.subplots(nrows, ncols, figsize=(4*ncols, 3*nrows), sharex=True, sharey=True)
+    axs = np.array(axs).reshape(-1)
+
+    for ax, pair in zip(axs, selected_pairs):
+        curves = {}
+        for beta in beta_list:
+            conc_vals = []
+            for lam in lambda_vals:
+                rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
+                conc_vals.append(concurrence_general(rho))
+            ax.plot(lambda_vals, conc_vals, label=f'β={beta}')
+        ax.set_title(f"pair {pair}")
+        ax.set_xlabel(r'$\lambda$')
+        ax.set_ylabel('Concurrence')
+        ax.grid(True)
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, title='β values', loc='center left',
+               bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=9, title_fontsize=10)
+
+    bc_type = "Periodic" if periodic else "Open"
+    plt.suptitle(f'Thermal Concurrence vs λ ({bc_type}, N={N})', fontsize=14)
+    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
+
+    fig.savefig(savepath, bbox_inches="tight")
+    plt.show()
+
+def plot_concurrence_compare_N(
+    N_list=(50, 51),
+    beta=30.0,
+    lambda_vals=None,
+    periodic=True,
+    selected_pairs=None,
+    savepath=None
+):
+    """
+    Aynı pair için farklı N değerlerini (ör. 50 vs 51) aynı ax üzerinde karşılaştırmalı plotlar.
+
+    N_list        : karşılaştırmak istediğin site sayıları (örn. (50,51))
+    beta          : tek bir β değeri
+    lambda_vals   : λ grid'i (default: np.linspace(-1,1,301))
+    periodic      : PBC/OBC
+    selected_pairs: [(i,j), ...] şeklinde site çiftleri
+    """
+    if savepath is None:
+        savepath = FIG_DIR / f"thermal_concurrence_comparence.pdf"
+    else:
+        savepath = Path(savepath).resolve()
+
+    savepath.parent.mkdir(parents=True, exist_ok=True)
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1, 1, 301)
+
+    if selected_pairs is None:
+        raise ValueError("selected_pairs bir liste olarak verilmeli, örn: [(24,25), (25,26)]")
+
+    num = len(selected_pairs)
+    ncols = 2
+    nrows = int(np.ceil(num / ncols))
+
+    fig, axs = plt.subplots(
+        nrows, ncols,
+        figsize=(4*ncols, 3.2*nrows),
+        sharex=True,
+        sharey=True
+    )
+
+    axs = np.array(axs).reshape(-1)
+
+    for ax, pair in zip(axs, selected_pairs):
+        for N in N_list:
+            conc_vals = []
+            for lam in lambda_vals:
+                rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
+                conc_vals.append(concurrence_general(rho))
+            ax.plot(lambda_vals, conc_vals, label=f'N={N}')
+
+        ax.set_title(f"pair {pair}")
+        ax.set_xlabel(r'$\lambda$')
+        ax.set_ylabel('Concurrence')
+        ax.grid(True)
+
+    bc_type = "Periodic" if periodic else "Open"
+    fig.suptitle(fr'Thermal Concurrence vs $\lambda$ (β={beta}, {bc_type})', fontsize=14)
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(handles, labels, title='System size', loc='center left',
+               bbox_to_anchor=(1.02, 0.5), frameon=False, fontsize=9, title_fontsize=10)
+    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
+    plt.show()
+
+    fig.savefig(savepath, bbox_inches="tight")
+
+def find_lambda_crit_for_pair(pair, N, beta, lambda_vals, periodic=True, eps=1e-4):
+    """
+    Belirli bir (i,j) pair'i için concurrence'ın 'entangled ↔ separable' 
+    geçtiği λ_crit değerini bulur.
+
+    Yöntem: conc(λ) > eps / < eps maske değiştiği noktayı bulup,
+    en |λ|'ye yakın geçiş noktasını seçiyoruz (topolojik geçiş civarı).
+    """
+    i, j = pair
+    conc_vals = []
+    for lam in lambda_vals:
+        rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
+        conc_vals.append(concurrence_general(rho))
+    conc_vals = np.array(conc_vals)
+
+    mask = conc_vals > eps
+    # maske nerede değişiyor? (True->False veya False->True)
+    flips = np.where(mask[1:] != mask[:-1])[0]
+
+    if flips.size == 0:
+        # bu gridde hiç geçiş yoksa NaN dönelim
+        return np.nan
+
+    # geçiş noktalarından |λ|'si en küçük olanı seç (λ=0 civarındaki threshold)
+    cand_idx = flips
+    best = cand_idx[np.argmin(np.abs(lambda_vals[cand_idx]))]
+
+    # daha düzgün olsun diye iki noktanın ortasını al (istersen linear interp da yapabiliriz)
+    lam_crit = 0.5 * (lambda_vals[best] + lambda_vals[best+1])
+    return lam_crit
+
+def plot_lambda_crit_vs_pairindex(
+    N=51,
+    beta=30.0,
+    lambda_vals=None,
+    periodic=True,
+    eps=1e-4,
+    savepath=None
+):
+    """
+    Komşu pairler (i, i+1 mod N) için λ_crit değerlerini hesaplayıp
+    pair index'e karşı plotlar.
+
+    x-ekseni: i  (pair (i, i+1))
+    y-ekseni: λ_crit  (concurrence ~ 0 olduğu sınır)
+    """
+    
+    if savepath is None:
+        savepath = FIG_DIR / f"lambda_critical_vs_pair_index{N}.pdf"
+    else:
+        savepath = Path(savepath).resolve()
+
+    savepath.parent.mkdir(parents=True, exist_ok=True)
+
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1.0, 1.0, 401)
+
+    indices = np.arange(N)
+    lambdas_crit = []
+
+    for i in range(N):
+        pair = (i, (i+1) % N)
+        lam_c = find_lambda_crit_for_pair(pair, N, beta, lambda_vals,
+                                          periodic=periodic, eps=eps)
+        lambdas_crit.append(lam_c)
+
+    lambdas_crit = np.array(lambdas_crit)
+
+    fig, ax = plt.subplots(figsize=(7, 4))
+
+    ax.plot(indices, lambdas_crit, 'o-')
+    ax.set_xlabel(r'pair index $i$ in $(i,i+1)$')
+    ax.set_ylabel(r'$\lambda_\mathrm{crit}$ where $C\approx 0$')
+
+    bc = "Periodic" if periodic else "Open"
+    ax.set_title(fr'Critical $\lambda$ vs pair index (N={N}, $\beta={beta}$, {bc})')
+    ax.grid(True)
+
+    fig.tight_layout()
+    fig.savefig(savepath, bbox_inches="tight")
+    plt.show()
+
+    return indices, lambdas_crit
+
+
+#
