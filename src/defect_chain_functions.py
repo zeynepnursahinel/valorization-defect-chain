@@ -1396,4 +1396,176 @@ def plot_lambda_crit_vs_pairindex(
     return indices, lambdas_crit
 
 
-#
+#zero mode-bulk contribution plots
+
+def diagonal_data_from_hamiltonian(N, beta, lam, periodic=True):
+    H = build_ssh_hamiltonian(N, lam, periodic=periodic)
+    eigvals, eigvecs = eigh(H)
+
+    if beta > 100:
+        f = expit(-beta * eigvals)
+    else:
+        x = np.clip(beta * eigvals, -700, 700)
+        f = 1 / (np.exp(x) + 1)
+
+    C = eigvecs @ np.diag(f) @ eigvecs.T
+    return eigvals, eigvecs, f, C
+
+def rho_from_abg(a, b, g):
+    """
+    Constructs the 4x4 two-site Gaussian RDM from
+    C_A = [[a, g], [g, b]].
+    Basis: |00>, |01>, |10>, |11>
+    """
+    rho00 = (1 - a) * (1 - b) - g**2
+    rho01 = b * (1 - a) + g**2
+    rho10 = a * (1 - b) + g**2
+    rho11 = a * b - g**2
+
+    rho = np.array([
+        [rho00, 0,     0,     0],
+        [0,     rho01, g,     0],
+        [0,     g,     rho10, 0],
+        [0,     0,     0,     rho11]
+    ], dtype=float)
+
+    # numerical cleanup
+    rho[np.abs(rho) < 1e-14] = 0.0
+    rho = 0.5 * (rho + rho.T)
+    rho = rho / np.trace(rho)
+
+    return rho
+
+def semi_analytic_concurrence_pair(
+    N=51,
+    beta=30.0,
+    lam=0.5,
+    pair=(0, 1),
+    periodic=True,
+    use_actual_f0=True
+):
+    """
+    Semi-analytic concurrence using:
+        C_semi = C_full_odd_num - C_zero_num + C_zero_trial
+
+    This avoids double-counting the zero-mode contribution.
+    """
+
+    i, j = pair
+
+    eigvals, eigvecs, f, C_full = diagonal_data_from_hamiltonian(
+        N=N,
+        beta=beta,
+        lam=lam,
+        periodic=periodic
+    )
+
+    # numerical near-zero mode
+    k0 = int(np.argmin(np.abs(eigvals)))
+    E0 = eigvals[k0]
+    psi0 = eigvecs[:, k0]
+
+    # trial near-zero mode
+    phi = trial_near_zero_profile(N=N, lam=lam, normalize=True)
+
+    # align sign with numerical mode
+    if np.dot(psi0, phi) < 0:
+        phi = -phi
+
+    f0 = f[k0] if use_actual_f0 else 0.5
+
+    # remove numerical zero-mode contribution
+    C_bg = C_full - f0 * np.outer(psi0, psi0)
+
+    # add trial zero-mode contribution
+    C_semi = C_bg + f0 * np.outer(phi, phi)
+
+    C_sub = C_semi[[i, j]][:, [i, j]]
+
+    a = C_sub[0, 0]
+    b = C_sub[1, 1]
+    g = C_sub[0, 1]
+
+    rho = rho_from_abg(a, b, g)
+    return concurrence_general(rho)
+
+def plot_semi_analytic_concurrence_vs_lambda(
+    N=51,
+    beta=30.0,
+    lambda_vals=None,
+    selected_pairs=None,
+    periodic=True,
+    savepath=None
+):
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-0.95, 0.95, 301)
+
+    if selected_pairs is None:
+        selected_pairs = [
+            (0, 1),
+            (N-1, 0),
+            (1, 2),
+            (N-2, N-1),
+            (N//4, N//4 + 1),
+            (N - N//4 - 1, N - N//4),
+        ]
+
+    if savepath is None:
+        savepath = FIG_DIR / f"semi_analytic_concurrence_N{N}.pdf"
+    else:
+        savepath = Path(savepath).resolve()
+
+    savepath.parent.mkdir(parents=True, exist_ok=True)
+
+    num = len(selected_pairs)
+    ncols = 2
+    nrows = int(np.ceil(num / ncols))
+
+    fig, axs = plt.subplots(
+        nrows, ncols,
+        figsize=(4*ncols, 3.2*nrows),
+        sharex=True,
+        sharey=True
+    )
+    axs = np.array(axs).reshape(-1)
+
+    for ax, pair in zip(axs, selected_pairs):
+        vals = []
+        for lam in lambda_vals:
+            vals.append(
+                semi_analytic_concurrence_pair(
+                    N=N,
+                    beta=beta,
+                    lam=lam,
+                    pair=pair,
+                    periodic=periodic
+                )
+            )
+
+        ax.plot(lambda_vals, vals, label="semi-analytic")
+        ax.set_title(f"pair {pair}")
+        ax.set_xlabel(r"$\lambda$")
+        ax.set_ylabel("Concurrence")
+        ax.grid(True)
+
+    for ax in axs[num:]:
+        ax.axis("off")
+
+    bc_type = "Periodic" if periodic else "Open"
+    fig.suptitle(
+        rf"Semi-analytic concurrence vs $\lambda$ ($N={N}$, $\beta={beta}$, {bc_type})",
+        fontsize=14
+    )
+
+    handles, labels = axs[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False
+    )
+
+    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
+    fig.savefig(savepath, bbox_inches="tight")
+    plt.show()
+
