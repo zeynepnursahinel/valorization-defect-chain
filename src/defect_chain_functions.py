@@ -1435,59 +1435,7 @@ def rho_from_abg(a, b, g):
 
     return rho
 
-##hatalı bir gösterim
-def semi_analytic_concurrence_pair(
-    N=51,
-    beta=30.0,
-    lam=0.5,
-    pair=(0, 1),
-    periodic=True,
-    use_actual_f0=True
-):
-    """
-    Semi-analytic concurrence using:
-        C_semi = C_full_odd_num - C_zero_num + C_zero_trial
 
-    This avoids double-counting the zero-mode contribution.
-    """
-
-    i, j = pair
-
-    eigvals, eigvecs, f, C_full = diagonal_data_from_hamiltonian(
-        N=N,
-        beta=beta,
-        lam=lam,
-        periodic=periodic
-    )
-
-    # numerical near-zero mode
-    k0 = int(np.argmin(np.abs(eigvals)))
-    E0 = eigvals[k0]
-    psi0 = eigvecs[:, k0]
-
-    # trial near-zero mode
-    phi = trial_near_zero_profile(N=N, lam=lam, normalize=True)
-
-    # align sign with numerical mode
-    if np.dot(psi0, phi) < 0:
-        phi = -phi
-
-    f0 = f[k0] if use_actual_f0 else 0.5
-
-    # remove numerical zero-mode contribution
-    C_bg = C_full - f0 * np.outer(psi0, psi0)
-
-    # add trial zero-mode contribution
-    C_semi = C_bg + f0 * np.outer(phi, phi)
-
-    C_sub = C_semi[[i, j]][:, [i, j]]
-
-    a = C_sub[0, 0]
-    b = C_sub[1, 1]
-    g = C_sub[0, 1]
-
-    rho = rho_from_abg(a, b, g)
-    return concurrence_general(rho)
 
 ##semi analitical concurrence form bulk concurrence
 def bulk_plus_trial_concurrence_pair(
@@ -1707,104 +1655,6 @@ def plot_numeric_vs_bulk_plus_trial_concurrence(
     fig.savefig(savepath, bbox_inches="tight")
     plt.show()
 
-####compare with numerical conucrrence plot????
-
-def plot_numeric_vs_semi_analytic_concurrence_vs_lambda(
-    N=51,
-    beta=30.0,
-    lambda_vals=None,
-    selected_pairs=None,
-    periodic=True,
-    savepath=None
-):
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-0.95, 0.95, 301)
-
-    if selected_pairs is None:
-        selected_pairs = [
-            (0, 1),
-            (N-1, 0),
-            (1, 2),
-            (N-2, N-1),
-            (N//4, N//4 + 1),
-            (N - N//4 - 1, N - N//4),
-        ]
-
-    if savepath is None:
-        savepath = FIG_DIR / f"numeric_vs_semi_analytic_concurrence_N{N}.pdf"
-    else:
-        savepath = Path(savepath).resolve()
-
-    savepath.parent.mkdir(parents=True, exist_ok=True)
-
-    num = len(selected_pairs)
-    ncols = 2
-    nrows = int(np.ceil(num / ncols))
-
-    fig, axs = plt.subplots(
-        nrows, ncols,
-        figsize=(4*ncols, 3.2*nrows),
-        sharex=True,
-        sharey=True
-    )
-    axs = np.array(axs).reshape(-1)
-
-    for ax, pair in zip(axs, selected_pairs):
-        numeric_vals = []
-        semi_vals = []
-
-        for lam in lambda_vals:
-            # full numerical
-            rho_num = compute_rho(
-                beta=beta,
-                lam=lam,
-                pair_idx=pair,
-                N=N,
-                periodic=periodic
-            )
-            numeric_vals.append(concurrence_general(rho_num))
-
-            # semi-analytic reconstruction
-            semi_vals.append(
-                semi_analytic_concurrence_pair(
-                    N=N,
-                    beta=beta,
-                    lam=lam,
-                    pair=pair,
-                    periodic=periodic
-                )
-            )
-
-        ax.plot(lambda_vals, numeric_vals, label="numeric", lw=1.8)
-        ax.plot(lambda_vals, semi_vals, "--", label="semi-analytic", lw=1.6)
-
-        ax.set_title(f"pair {pair}")
-        ax.set_xlabel(r"$\lambda$")
-        ax.set_ylabel("Concurrence")
-        ax.grid(True)
-
-    for ax in axs[num:]:
-        ax.axis("off")
-
-    bc_type = "Periodic" if periodic else "Open"
-    fig.suptitle(
-        rf"Numerical vs semi-analytic concurrence ($N={N}$, $\beta={beta}$, {bc_type})",
-        fontsize=14
-    )
-
-    handles, labels = axs[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False
-    )
-
-    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
-    fig.savefig(savepath, bbox_inches="tight")
-    plt.show()
-
 
 
 
@@ -1814,76 +1664,10 @@ def plot_numeric_vs_semi_analytic_concurrence_vs_lambda(
 
 #####ENTANGLEMENT PHASE DIAGRAM NASIL DEĞİŞİYOR?
 
-#bu sadece bir beta değeri için burada sabit bir betada lambda criticalın spatial olarak nasıl ilerlediğine bakıyruz?
 
-def plot_defect_concurrence_heatmap_lambda_pairindex(
-    N=51,
-    beta=30.0,
-    lambda_vals=None,
-    periodic=True,
-    savepath=None,
-    cmap="viridis",
-):
-    """
-    Heatmap of nearest-neighbor concurrence C_{i,i+1} vs lambda and pair index i
-    for an odd-N periodic SSH chain.
-    """
 
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-1.0, 1.0, 301)
 
-    if savepath is None:
-        savepath = FIG_DIR / f"defect_concurrence_heatmap_N{N}_beta{beta}.pdf"
-    else:
-        savepath = Path(savepath).resolve()
 
-    savepath.parent.mkdir(parents=True, exist_ok=True)
-
-    Cmap = np.zeros((N, len(lambda_vals)))
-
-    for p, lam in enumerate(lambda_vals):
-        for i in range(N):
-            pair = (i, (i + 1) % N)
-            rho = compute_rho(
-                beta=beta,
-                lam=lam,
-                pair_idx=pair,
-                N=N,
-                periodic=periodic
-            )
-            Cmap[i, p] = concurrence_general(rho)
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    im = ax.imshow(
-        Cmap,
-        aspect="auto",
-        origin="lower",
-        extent=[lambda_vals[0], lambda_vals[-1], 0, N-1],
-        cmap=cmap,
-        vmin=0,
-        vmax=1
-    )
-
-    ax.set_xlabel(r"$\lambda$")
-    ax.set_ylabel(r"pair index $i$ in $(i,i+1)$")
-    ax.set_title(
-        rf"Nearest-neighbor concurrence heatmap "
-        rf"($N={N}$, $\beta={beta}$, PBC)"
-    )
-
-    ax.axvline(0, color="white", ls="--", lw=1, alpha=0.8)
-
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label("Concurrence")
-
-    fig.tight_layout()
-    fig.savefig(savepath, bbox_inches="tight")
-    plt.show()
-
-    return lambda_vals, np.arange(N), Cmap
-
- #show difference bewtwene periodic and defect odd chain concurrence but to do it we need 
  #eta continium function
 
 KS = np.linspace(0, 2*np.pi, 8192, endpoint=False) # k-grid for continuum integrals (periodic grid; endpoint=False to exclude 2pi)
@@ -2242,169 +2026,7 @@ def concurrence_gradients_abg(a, b, g, eps=1e-12):
 
     return Fa, Fb, Fg
 
-def zero_mode_linear_response_pair(
-    N=51,
-    beta=30.0,
-    lam=0.5,
-    pair=(0, 1),
-    periodic=True,
-    use_trial=True,
-):
-    eigvals, eigvecs, f, C_full = diagonal_data_from_hamiltonian(
-        N=N,
-        beta=beta,
-        lam=lam,
-        periodic=periodic
-    )
 
-    k0 = int(np.argmin(np.abs(eigvals)))
-    psi0 = eigvecs[:, k0]
-    f0 = f[k0]
-
-    phi = trial_near_zero_profile(N=N, lam=lam, normalize=True)
-
-    if np.dot(psi0, phi) < 0:
-        phi = -phi
-
-    zm_vec = phi if use_trial else psi0
-
-    C_rest = C_full - f0 * np.outer(psi0, psi0)
-    C_with = C_rest + f0 * np.outer(zm_vec, zm_vec)
-
-    i, j = pair
-
-    C_sub_rest = C_rest[[i, j]][:, [i, j]]
-    C_sub_with = C_with[[i, j]][:, [i, j]]
-
-    a0 = C_sub_rest[0, 0]
-    b0 = C_sub_rest[1, 1]
-    g0 = C_sub_rest[0, 1]
-
-    # exact zero-mode effect on concurrence
-    rho_rest = rho_from_abg(a0, b0, g0)
-    rho_with = rho_from_abg(
-        C_sub_with[0, 0],
-        C_sub_with[1, 1],
-        C_sub_with[0, 1]
-    )
-
-    C_rest_val = concurrence_general(rho_rest)
-    C_with_val = concurrence_general(rho_with)
-    delta_exact = C_with_val - C_rest_val
-
-    # linear response
-    Fa, Fb, Fg = concurrence_gradients_abg(a0, b0, g0)
-
-    delta_a = f0 * zm_vec[i]**2
-    delta_b = f0 * zm_vec[j]**2
-    delta_g = f0 * zm_vec[i] * zm_vec[j]
-
-    delta_lin = Fa * delta_a + Fb * delta_b + Fg * delta_g
-
-    return {
-        "C_rest": C_rest_val,
-        "C_with": C_with_val,
-        "delta_exact": delta_exact,
-        "delta_lin": delta_lin,
-        "Fa": Fa,
-        "Fb": Fb,
-        "Fg": Fg,
-        "delta_a": delta_a,
-        "delta_b": delta_b,
-        "delta_g": delta_g,
-        "a0": a0,
-        "b0": b0,
-        "g0": g0,
-        "f0": f0,
-    }
-
-
-#### correlation matrix açıklaması
-def plot_zero_mode_linear_response_vs_lambda(
-    N=51,
-    beta=30.0,
-    lambda_vals=None,
-    selected_pairs=None,
-    periodic=True,
-    savepath=None,
-):
-    if lambda_vals is None:
-        lambda_vals = np.linspace(-0.95, 0.95, 301)
-
-    if selected_pairs is None:
-        selected_pairs = [
-            (0, 1),
-            (N-1, 0),
-            (1, 2),
-            (N-2, N-1),
-            (N//4, N//4 + 1),
-            (N - N//4 - 1, N - N//4),
-        ]
-
-    if savepath is None:
-        savepath = FIG_DIR / f"zero_mode_linear_response_N{N}.pdf"
-    else:
-        savepath = Path(savepath).resolve()
-
-    savepath.parent.mkdir(parents=True, exist_ok=True)
-
-    num = len(selected_pairs)
-    ncols = 2
-    nrows = int(np.ceil(num / ncols))
-
-    fig, axs = plt.subplots(
-        nrows, ncols,
-        figsize=(4*ncols, 3.2*nrows),
-        sharex=True
-    )
-    axs = np.array(axs).reshape(-1)
-
-    for ax, pair in zip(axs, selected_pairs):
-        exact_vals = []
-        lin_vals = []
-
-        for lam in lambda_vals:
-            out = zero_mode_linear_response_pair(
-                N=N,
-                beta=beta,
-                lam=lam,
-                pair=pair,
-                periodic=periodic,
-                use_trial=True,
-            )
-            exact_vals.append(out["delta_exact"])
-            lin_vals.append(out["delta_lin"])
-
-        ax.plot(lambda_vals, exact_vals, lw=1.8, label=r"exact $\Delta C_W^{zm}$")
-        ax.plot(lambda_vals, lin_vals, "--", lw=1.8, label=r"linear response")
-
-        ax.axhline(0, color="gray", lw=0.8)
-        ax.set_title(f"pair {pair}")
-        ax.set_xlabel(r"$\lambda$")
-        ax.set_ylabel(r"$\Delta C_W$")
-        ax.grid(True)
-
-    for ax in axs[num:]:
-        ax.axis("off")
-
-    fig.suptitle(
-        rf"Zero-mode contribution to concurrence: exact vs linear response "
-        rf"($N={N}$, $\beta={beta}$)",
-        fontsize=14
-    )
-
-    handles, labels = axs[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.5),
-        frameon=False
-    )
-
-    plt.tight_layout(rect=[0, 0.03, 0.95, 0.95])
-    fig.savefig(savepath, bbox_inches="tight")
-    plt.show()
 
 
 
@@ -3975,3 +3597,624 @@ def plot_numeric_vs_contour_concurrence_validation(
     plt.show()
 
 ### zero mode ve contour defectin farkına bakalım zero modedan gelen katkıyı correlation matrix üzerinde
+
+def zero_mode_correlation_contribution(
+    N=51,
+    lam=0.5,
+    beta=30.0,
+    periodic=True,
+    use_actual_f0=True
+):
+    H = build_ssh_hamiltonian(N, lam, periodic=periodic)
+    E, U = eigh(H)
+
+    k0 = int(np.argmin(np.abs(E)))
+    E0 = E[k0]
+    psi0 = U[:, k0]
+
+    if use_actual_f0:
+        f0 = 1 / (np.exp(beta * E0) + 1)
+    else:
+        f0 = 0.5
+
+    C0 = f0 * np.outer(psi0, psi0)
+
+    return C0, E0, psi0, f0
+
+def decompose_defect_correlation(
+    N_def=51,
+    N_bulk=200,
+    lam=0.5,
+    beta=30.0,
+    n_theta=4096,
+    periodic=True
+):
+    C_def = correlation_matrix_contour(
+        N=N_def,
+        lam=lam,
+        beta=beta,
+        periodic=periodic,
+        n_theta=n_theta,
+        verbose=False
+    )
+
+    C_bulk_big = correlation_matrix_contour(
+        N=N_bulk,
+        lam=lam,
+        beta=beta,
+        periodic=True,
+        n_theta=n_theta,
+        verbose=False
+    )
+
+    C_bulk_matched = np.zeros_like(C_def, dtype=complex)
+
+    for i in range(N_def):
+        for j in range(N_def):
+            d = j - i
+            ib = i % 2
+            jb = (ib + d) % N_bulk
+            C_bulk_matched[i, j] = C_bulk_big[ib, jb]
+
+    DeltaC = C_def - C_bulk_matched
+
+    C0, E0, psi0, f0 = zero_mode_correlation_contribution(
+        N=N_def,
+        lam=lam,
+        beta=beta,
+        periodic=periodic
+    )
+
+    C_bg_def = DeltaC - C0
+
+    return {
+        "C_def": C_def,
+        "C_bulk": C_bulk_matched,
+        "DeltaC": DeltaC,
+        "C0": C0,
+        "C_bg_def": C_bg_def,
+        "E0": E0,
+        "psi0": psi0,
+        "f0": f0
+    }
+
+def plot_C0j_decomposition(
+    N_def=51,
+    N_bulk=200,
+    lam=0.5,
+    beta=30.0,
+    ref_site=0,
+    n_theta=4096,
+    use_abs=False
+):
+    data = decompose_defect_correlation(
+        N_def=N_def,
+        N_bulk=N_bulk,
+        lam=lam,
+        beta=beta,
+        n_theta=n_theta
+    )
+
+    DeltaC = data["DeltaC"]
+    C0 = data["C0"]
+    C_bg_def = data["C_bg_def"]
+
+    js = np.arange(N_def)
+
+    shift = N_def // 2 - ref_site
+    x = np.arange(N_def) - N_def // 2
+
+    y_delta = np.roll(DeltaC[ref_site, :], shift)
+    y_zero = np.roll(C0[ref_site, :], shift)
+    y_bg = np.roll(C_bg_def[ref_site, :], shift)
+
+    if use_abs:
+        y_delta = np.abs(y_delta)
+        y_zero = np.abs(y_zero)
+        y_bg = np.abs(y_bg)
+        ylabel = r"absolute value"
+    else:
+        y_delta = y_delta.real
+        y_zero = y_zero.real
+        y_bg = y_bg.real
+        ylabel = r"real part"
+
+    plt.figure(figsize=(7,4))
+
+    plt.plot(x, y_delta, "o-", ms=4, label=r"$\Delta C_{0j}$")
+    plt.plot(x, y_zero, "s--", ms=4, label=r"$C^0_{0j}$")
+    plt.plot(x, y_bg, "d-.", ms=4, label=r"$\Delta C_{0j}-C^0_{0j}$")
+
+    plt.axvline(0, color="gray", ls="--", lw=0.8, label="site 0")
+    plt.axvline(-1, color="red", ls=":", lw=1.0, label="site 50")
+    plt.axvline(1, color="orange", ls=":", lw=1.0, label="site 1")
+
+    plt.xlabel("distance from site 0")
+    plt.ylabel(ylabel)
+
+    plt.title(
+        rf"Defect correction decomposition "
+        rf"($N={N_def}$, $\lambda={lam}$, $\beta={beta}$)"
+    )
+
+    plt.grid(True, ls="--", alpha=0.4)
+    plt.legend(frameon=False)
+    plt.tight_layout()
+    plt.show()
+
+    print("E0 =", data["E0"])
+    print("f0 =", data["f0"])
+
+    return data
+
+def plot_C0j_decomposition_ratio(
+    N_def=51,
+    N_bulk=200,
+    lam=0.5,
+    beta=30.0,
+    ref_site=0,
+    n_theta=4096,
+    eps=1e-12
+):
+    data = decompose_defect_correlation(
+        N_def=N_def,
+        N_bulk=N_bulk,
+        lam=lam,
+        beta=beta,
+        n_theta=n_theta
+    )
+
+    DeltaC = data["DeltaC"]
+    C0 = data["C0"]
+    C_bg = data["C_bg_def"]
+
+    shift = N_def // 2 - ref_site
+    x = np.arange(N_def) - N_def // 2
+
+    delta = np.roll(DeltaC[ref_site, :], shift)
+    zero = np.roll(C0[ref_site, :], shift)
+    bg = np.roll(C_bg[ref_site, :], shift)
+
+    ratio = np.abs(zero) / (np.abs(delta) + eps)
+
+    fig, axs = plt.subplots(2, 1, figsize=(7, 7), sharex=True)
+
+    axs[0].plot(x, np.abs(delta), "o-", ms=4, label=r"$|\Delta C_{0j}|$")
+    axs[0].plot(x, np.abs(zero), "s--", ms=4, label=r"$|C^0_{0j}|$")
+    axs[0].plot(x, np.abs(bg), "d-.", ms=4, label=r"$|\Delta C_{0j}-C^0_{0j}|$")
+
+    axs[0].set_ylabel("absolute value")
+    axs[0].set_title(
+        rf"Zero-mode decomposition "
+        rf"($N={N_def}$, $\lambda={lam}$, $\beta={beta}$)"
+    )
+    axs[0].grid(True, ls="--", alpha=0.4)
+    axs[0].legend(frameon=False)
+
+    axs[1].plot(x, ratio, "o-", ms=4)
+    axs[1].axhline(1, color="gray", ls="--", lw=1)
+
+    axs[1].set_xlabel("distance from site 0")
+    axs[1].set_ylabel(r"$|C^0_{0j}|/|\Delta C_{0j}|$")
+    axs[1].grid(True, ls="--", alpha=0.4)
+
+    for ax in axs:
+        ax.axvline(0, color="gray", ls="--", lw=0.8)
+        ax.axvline(-1, color="red", ls=":", lw=1.0)
+        ax.axvline(1, color="orange", ls=":", lw=1.0)
+
+    plt.tight_layout()
+    plt.show()
+
+    print("E0 =", data["E0"])
+    print("f0 =", data["f0"])
+
+    return data, x, ratio
+
+def plot_C0j_signed_cancellation_zoom(
+    N_def=51,
+    N_bulk=200,
+    lam=0.5,
+    beta=30.0,
+    ref_site=0,
+    n_theta=4096,
+    zoom_radius=8
+):
+    data = decompose_defect_correlation(
+        N_def=N_def,
+        N_bulk=N_bulk,
+        lam=lam,
+        beta=beta,
+        n_theta=n_theta
+    )
+
+    DeltaC = data["DeltaC"]
+    C0 = data["C0"]
+    C_bg = data["C_bg_def"]
+
+    shift = N_def // 2 - ref_site
+    x = np.arange(N_def) - N_def // 2
+
+    delta = np.roll(DeltaC[ref_site, :], shift).real
+    zero = np.roll(C0[ref_site, :], shift).real
+    bg = np.roll(C_bg[ref_site, :], shift).real
+
+    mask = np.abs(x) <= zoom_radius
+
+    plt.figure(figsize=(7, 4.5))
+
+    plt.plot(x[mask], delta[mask], "o-", ms=5, lw=1.8, label=r"$\Delta C_{0j}$")
+    plt.plot(x[mask], zero[mask], "s--", ms=5, lw=1.8, label=r"$C^0_{0j}$")
+    plt.plot(x[mask], bg[mask], "d-.", ms=5, lw=1.8, label=r"$C^{\mathrm{bg-def}}_{0j}$")
+
+    plt.axhline(0, color="black", lw=0.8)
+    plt.axvline(0, color="gray", ls="--", lw=0.8, label="site 0")
+    plt.axvline(-1, color="red", ls=":", lw=1.0, label="site 50")
+    plt.axvline(1, color="orange", ls=":", lw=1.0, label="site 1")
+
+    plt.xlabel("distance from site 0")
+    plt.ylabel(r"real part")
+
+    plt.title(
+        rf"Signed cancellation in defect correction "
+        rf"($N={N_def}$, $\lambda={lam}$, $\beta={beta}$)"
+    )
+
+    plt.grid(True, ls="--", alpha=0.4)
+    plt.legend(frameon=False, fontsize=9)
+    plt.tight_layout()
+    plt.show()
+
+    print("E0 =", data["E0"])
+    print("f0 =", data["f0"])
+
+    return data, x, delta, zero, bg
+
+
+##sanity check for concureence eta relation and X form for rho 
+
+def eta_sanity_check(
+    N=51,
+    beta=30.0,
+    lam=1.0,
+    pair=(0, 1),
+    periodic=True,
+    verbose=True
+):
+    eigvals, eigvecs, f, C = diagonal_data_from_hamiltonian(
+        N=N, beta=beta, lam=lam, periodic=periodic
+    )
+
+    i, j = pair
+    C_sub = C[[i, j]][:, [i, j]]
+
+    a = C_sub[0, 0]
+    b = C_sub[1, 1]
+    g = C_sub[0, 1]
+
+    eta = -2 * g
+
+    rho_abg = rho_from_abg(a, b, g)
+    conc_from_rho_abg = concurrence_general(rho_abg)
+
+    conc_from_eta = concurrence_from_eta(eta)
+
+    rho_direct = compute_rho(
+        beta=beta,
+        lam=lam,
+        pair_idx=pair,
+        N=N,
+        periodic=periodic
+    )
+    conc_direct = concurrence_general(rho_direct)
+
+    if verbose:
+        print("==== ETA SANITY CHECK ====")
+        print(f"N = {N}, beta = {beta}, lambda = {lam}, pair = {pair}")
+        print()
+        print("C_sub =")
+        print(C_sub)
+        print()
+        print(f"C_ii = {a:.12f}")
+        print(f"C_jj = {b:.12f}")
+        print(f"C_ij = g = {g:.12f}")
+        print(f"eta = -2g = {eta:.12f}")
+        print()
+        print(f"Concurrence from eta formula      = {conc_from_eta:.12f}")
+        print(f"Concurrence from rho_from_abg     = {conc_from_rho_abg:.12f}")
+        print(f"Concurrence from compute_rho      = {conc_direct:.12f}")
+        print()
+        print(f"|C_ii - 1/2| = {abs(a - 0.5):.3e}")
+        print(f"|C_jj - 1/2| = {abs(b - 0.5):.3e}")
+
+    return {
+        "C_sub": C_sub,
+        "a": a,
+        "b": b,
+        "g": g,
+        "eta": eta,
+        "conc_from_eta": conc_from_eta,
+        "conc_from_rho_abg": conc_from_rho_abg,
+        "conc_direct": conc_direct,
+    }
+
+#Entangement Phase Diagrams
+
+def average_bell_from_rho(rho):
+    """
+    Horodecki CHSH maximum:
+    B_max = 2 sqrt(m1 + m2),
+    where m1,m2 are the two largest eigenvalues of T^T T.
+    """
+    sx = np.array([[0, 1], [1, 0]], dtype=complex)
+    sy = np.array([[0, -1j], [1j, 0]], dtype=complex)
+    sz = np.array([[1, 0], [0, -1]], dtype=complex)
+    sigmas = [sx, sy, sz]
+
+    T = np.zeros((3, 3), dtype=float)
+
+    for a in range(3):
+        for b in range(3):
+            op = np.kron(sigmas[a], sigmas[b])
+            T[a, b] = np.real(np.trace(rho @ op))
+
+    eigs = np.sort(np.linalg.eigvalsh(T.T @ T))[::-1]
+    return 2 * np.sqrt(eigs[0] + eigs[1])
+
+def compute_pair_maps(
+    selected_pairs=[(0, 1), (0, 50)],
+    N=51,
+    beta_vals=None,
+    lambda_vals=None,
+    periodic=True
+):
+    if beta_vals is None:
+        beta_vals = np.geomspace(0.3, 50, 80)
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1, 1, 401)
+
+    C_maps = {}
+    B_maps = {}
+
+    for pair in selected_pairs:
+        C = np.zeros((len(beta_vals), len(lambda_vals)))
+        B = np.zeros_like(C)
+
+        for ib, beta in enumerate(beta_vals):
+            for il, lam in enumerate(lambda_vals):
+                rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
+                C[ib, il] = concurrence_general(rho)
+                B[ib, il] = average_bell_from_rho(rho)
+
+        C_maps[pair] = C
+        B_maps[pair] = B
+
+    return beta_vals, lambda_vals, C_maps, B_maps
+
+def plot_defect_phase_diagram_pair(
+    pair,
+    beta_vals,
+    lambda_vals,
+    C_map,
+    B_map,
+    eps_C=1e-4,
+    bell_threshold=2.0,
+    savepath=None
+):
+    phase = np.zeros_like(C_map)
+    phase[C_map > eps_C] = 1              # entangled but Bell-local
+    phase[B_map > bell_threshold] = 2     # Bell-violating
+
+    fig, ax = plt.subplots(figsize=(7, 4.8))
+
+    im = ax.pcolormesh(
+        beta_vals,
+        lambda_vals,
+        phase.T,
+        shading="auto"
+    )
+
+    ax.contour(beta_vals, lambda_vals, C_map.T, levels=[eps_C], linewidths=2)
+    ax.contour(beta_vals, lambda_vals, B_map.T, levels=[bell_threshold], linewidths=2, linestyles="--")
+
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\beta$")
+    ax.set_ylabel(r"$\lambda$")
+    ax.set_title(fr"Defect entanglement phase diagram, pair {pair}")
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_ticks([0, 1, 2])
+    cbar.set_ticklabels(["separable", "entangled/local", "Bell violating"])
+
+    plt.tight_layout()
+
+    if savepath is not None:
+        fig.savefig(savepath, bbox_inches="tight")
+
+    plt.show()
+
+def defect_pair_phase_diagram(
+    pair=(0, 1),
+    N=51,
+    beta_vals=None,
+    lambda_vals=None,
+    periodic=True,
+    eps_C=1e-4,
+    bell_threshold=2.0,
+    savepath=None
+):
+    if beta_vals is None:
+        beta_vals = np.geomspace(0.3, 30, 80)
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1, 1, 301)
+
+    C_map = np.zeros((len(beta_vals), len(lambda_vals)))
+    B_map = np.zeros_like(C_map)
+
+    for ib, beta in enumerate(beta_vals):
+        for il, lam in enumerate(lambda_vals):
+            rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
+            C_map[ib, il] = concurrence_general(rho)
+            B_map[ib, il] = average_bell_from_rho(rho)
+
+    phase = np.zeros_like(C_map)
+    phase[C_map > eps_C] = 1
+    phase[B_map > bell_threshold] = 2
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.6))
+
+    ax.contourf(
+        beta_vals,
+        lambda_vals,
+        phase.T,
+        levels=[-0.5, 0.5, 1.5, 2.5],
+        colors=["lightgray", "khaki", "lightblue"],
+        alpha=0.85
+    )
+
+    ax.contour(
+        beta_vals,
+        lambda_vals,
+        C_map.T,
+        levels=[eps_C],
+        colors="red",
+        linewidths=2
+    )
+
+    ax.contour(
+        beta_vals,
+        lambda_vals,
+        B_map.T,
+        levels=[bell_threshold],
+        colors="blue",
+        linewidths=2
+    )
+
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\beta$")
+    ax.set_ylabel(r"$\lambda$")
+    ax.set_ylim(lambda_vals[0], lambda_vals[-1])
+
+    bc = "PBC" if periodic else "OBC"
+    ax.set_title(fr"Defect Entanglement Phase Diagram, pair {pair} ({bc}, N={N})")
+
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], color="red", lw=2, label=r"$\lambda_C(\beta)$, $C\to0$"),
+        Line2D([0], [0], color="blue", lw=2, label=r"$\lambda_B(\beta)$, $\langle B\rangle \to 2$")
+    ]
+    ax.legend(handles=legend_elements, loc="upper right", frameon=False)
+
+    plt.tight_layout()
+
+    if savepath is not None:
+        fig.savefig(savepath, bbox_inches="tight", dpi=300)
+
+    plt.show()
+
+    return beta_vals, lambda_vals, C_map, B_map, phase
+
+def average_bell_from_rho(rho):
+    sx = np.array([[0, 1], [1, 0]], dtype=complex)
+    sy = np.array([[0, -1j], [1j, 0]], dtype=complex)
+    sz = np.array([[1, 0], [0, -1]], dtype=complex)
+
+    sigmas = [sx, sy, sz]
+    T = np.zeros((3, 3), dtype=float)
+
+    for i in range(3):
+        for j in range(3):
+            T[i, j] = np.real(np.trace(rho @ np.kron(sigmas[i], sigmas[j])))
+
+    eigs = np.sort(np.linalg.eigvalsh(T.T @ T))[::-1]
+    return 2 * np.sqrt(eigs[0] + eigs[1])
+
+####concurrenceları aynı plota koyalım
+def concurrence_boundary_for_pair(
+    pair,
+    N=51,
+    beta_vals=None,
+    lambda_vals=None,
+    periodic=True,
+    eps_C=1e-4
+):
+    if beta_vals is None:
+        beta_vals = np.geomspace(0.3, 30, 80)
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1, 1, 401)
+
+    lambda_c = []
+
+    for beta in beta_vals:
+        C_vals = []
+
+        for lam in lambda_vals:
+            rho = compute_rho(beta, lam, pair, N=N, periodic=periodic)
+            C_vals.append(concurrence_general(rho))
+
+        C_vals = np.array(C_vals)
+
+        mask = C_vals > eps_C
+
+        if not np.any(mask):
+            lambda_c.append(np.nan)
+            continue
+
+        idx = np.where(mask)[0]
+
+        # üst boundary: entangled bölgenin en büyük lambda sınırı
+        j = idx[-1]
+        lambda_c.append(lambda_vals[j])
+
+    return beta_vals, np.array(lambda_c)
+
+def plot_concurrence_boundaries_multiple_pairs(
+    pairs=[(0, 1), (12, 13), (24, 25)],
+    N=51,
+    beta_vals=None,
+    lambda_vals=None,
+    periodic=True,
+    eps_C=1e-4,
+    savepath=None
+):
+    if beta_vals is None:
+        beta_vals = np.geomspace(0.3, 30, 80)
+
+    if lambda_vals is None:
+        lambda_vals = np.linspace(-1, 1, 401)
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.6))
+
+    for pair in pairs:
+        beta_vals, lambda_c = concurrence_boundary_for_pair(
+            pair=pair,
+            N=N,
+            beta_vals=beta_vals,
+            lambda_vals=lambda_vals,
+            periodic=periodic,
+            eps_C=eps_C
+        )
+
+        ax.plot(beta_vals, lambda_c, lw=2, label=f"pair {pair}")
+
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$\beta$")
+    ax.set_ylabel(r"$\lambda_C(\beta)$")
+    ax.set_ylim(lambda_vals[0], lambda_vals[-1])
+
+    bc = "PBC" if periodic else "OBC"
+    ax.set_title(fr"Concurrence critical lines for selected pairs ({bc}, N={N})")
+
+    ax.grid(True, ls="--", alpha=0.35)
+    ax.legend(frameon=False)
+
+    plt.tight_layout()
+
+    if savepath is not None:
+        fig.savefig(savepath, bbox_inches="tight", dpi=300)
+
+    plt.show()
+
